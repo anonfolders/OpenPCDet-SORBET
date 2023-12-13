@@ -1,6 +1,7 @@
+import os.path
 import pickle
 import time
-
+import json
 import numpy as np
 import torch
 import tqdm
@@ -114,19 +115,53 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
         ret_dict['recall/rcnn_%s' % str(cur_thresh)] = cur_rcnn_recall
 
     total_pred_objects = 0
+    i = 0
+    print(len(det_annos))
     for anno in det_annos:
+        raw_res = []
+        # for j in range(0, len(anno['name'])):
+        #     raw_res_of_j = {
+        #         'name': str(anno['name'][j]),
+        #         'occluded': float(anno['occluded'][j]),
+        #         'alpha': float(anno['alpha'][j]),
+        #         'dimensions': anno['dimensions'][j].tolist(),
+        #         'location': anno['location'][j].tolist(),
+        #         'rotation_y': float(anno['rotation_y'][j]),
+        #         'truncated': float(anno['truncated'][j]),
+        #         'bbox': anno['bbox'][j].tolist(),
+        #         'score': float(anno['score'][j]),
+        #     }
+        #     raw_res.append(raw_res_of_j)
         total_pred_objects += anno['name'].__len__()
+        # if os.path.exists(('/home/zhy/Desktop/PointPillar/OpenPCDet (copy)/outPutOfZhy/raw_res/point_pillar/frame_id_'+str(anno['frame_id'])+'.json')):
+        #     os.remove('/home/zhy/Desktop/PointPillar/OpenPCDet (copy)/outPutOfZhy/raw_res/point_pillar/frame_id_'+str(anno['frame_id'])+'.json')
+        # with open('/home/zhy/Desktop/PointPillar/OpenPCDet (copy)/outPutOfZhy/raw_res/point_pillar/frame_id_'+str(anno['frame_id'])+'.json', 'w') as fout:
+        #     json.dump(raw_res, fout)
+
     logger.info('Average predicted number of objects(%d samples): %.3f'
                 % (len(det_annos), total_pred_objects / max(1, len(det_annos))))
 
     with open(result_dir / 'result.pkl', 'wb') as f:
         pickle.dump(det_annos, f)
 
-    result_str, result_dict = dataset.evaluation(
+    result_str, result_dict, threshold, thresholds_indices = dataset.evaluation(
         det_annos, class_names,
         eval_metric=cfg.MODEL.POST_PROCESSING.EVAL_METRIC,
         output_path=final_output_dir
     )
+
+    print("threshold")
+    print(threshold)
+    if os.path.exists(result_dir / 'detections.txt'):
+        os.remove(result_dir / 'detections.txt')
+    with open(result_dir / 'detections.txt', 'w') as fd:
+        for iou, id in zip(threshold, thresholds_indices):
+            line_id = ' '.join([str(i) for i in id])
+            line_iou = ' '.join([str(i) for i in iou])
+            line = line_id + ' ' + line_iou + '\n'
+            fd.write(line)
+            # print(iou, id)
+    print('Written gt and ious to {}'.format(result_dir / 'detections.txt'))
 
     logger.info(result_str)
     ret_dict.update(result_dict)

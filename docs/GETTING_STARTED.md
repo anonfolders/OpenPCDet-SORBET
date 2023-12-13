@@ -239,7 +239,7 @@ python test.py --cfg_file ${CONFIG_FILE} --batch_size ${BATCH_SIZE} --ckpt ${CKP
 
 * To test all the saved checkpoints of a specific training setting and draw the performance curve on the Tensorboard, add the `--eval_all` argument: 
 ```shell script
-python test.py --cfg_file ${CONFIG_FILE} --batch_size ${BATCH_SIZE} --eval_all
+python test.py --cfg_file ${CONFIG_FILE} --batch_size ${BATCH_SIZE} --eval_all --ckp {CHECK_POINT}
 ```
 
 * To test with multiple GPUs:
@@ -252,7 +252,10 @@ sh scripts/dist_test.sh ${NUM_GPUS} \
 sh scripts/slurm_test_mgpu.sh ${PARTITION} ${NUM_GPUS} \
     --cfg_file ${CONFIG_FILE} --batch_size ${BATCH_SIZE}
 ```
-
+if want to test a model to get the raw result, use
+```shell script
+python test.py --cfg_file ${CONFIG_FILE} --batch_size ${BATCH_SIZE} --eval_all --ckp{CHECK_POINT} --raw_data{MODEL_NAME}
+```
 
 ### Train a model
 You could optionally add extra command line parameters `--batch_size ${BATCH_SIZE}` and `--epochs ${EPOCHS}` to specify your preferred parameters. 
@@ -271,3 +274,4 @@ sh scripts/slurm_train.sh ${PARTITION} ${JOB_NAME} ${NUM_GPUS} --cfg_file ${CONF
 ```shell script
 python train.py --cfg_file ${CONFIG_FILE}
 ```
+

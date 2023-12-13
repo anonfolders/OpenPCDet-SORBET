@@ -124,20 +124,20 @@ class CustomDataset(DatasetTemplate):
                 info_with_fakelidar=self.dataset_cfg.get('INFO_WITH_FAKELIDAR', False)
             )
             kitti_class_names = [map_name_to_kitti[x] for x in class_names]
-            ap_result_str, ap_dict = kitti_eval.get_official_eval_result(
+            ap_result_str, ap_dict, threshold, thresholds_indices = kitti_eval.get_official_eval_result(
                 gt_annos=eval_gt_annos, dt_annos=eval_det_annos, current_classes=kitti_class_names
             )
-            return ap_result_str, ap_dict
+            return ap_result_str, ap_dict, threshold, thresholds_indices
 
         eval_det_annos = copy.deepcopy(det_annos)
         eval_gt_annos = [copy.deepcopy(info['annos']) for info in self.custom_infos]
 
         if kwargs['eval_metric'] == 'kitti':
-            ap_result_str, ap_dict = kitti_eval(eval_det_annos, eval_gt_annos, self.map_class_to_kitti)
+            ap_result_str, ap_dict, threshold, thresholds_indices = kitti_eval(eval_det_annos, eval_gt_annos, self.map_class_to_kitti)
         else:
             raise NotImplementedError
 
-        return ap_result_str, ap_dict
+        return ap_result_str, ap_dict, threshold, thresholds_indices
 
     def get_infos(self, class_names, num_workers=4, has_label=True, sample_id_list=None, num_features=4):
         import concurrent.futures as futures

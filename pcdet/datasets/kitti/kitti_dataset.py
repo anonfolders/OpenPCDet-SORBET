@@ -358,9 +358,15 @@ class KittiDataset(DatasetTemplate):
 
         eval_det_annos = copy.deepcopy(det_annos)
         eval_gt_annos = [copy.deepcopy(info['annos']) for info in self.kitti_infos]
-        ap_result_str, ap_dict = kitti_eval.get_official_eval_result(eval_gt_annos, eval_det_annos, class_names)
+        ap_result_str, ap_dict, threshold, thresholds_indices, detection = kitti_eval.get_official_eval_result(eval_gt_annos, eval_det_annos, class_names)
 
-        return ap_result_str, ap_dict
+        return ap_result_str, ap_dict, threshold, thresholds_indices, detection
+
+    def get_gt(self, det_annos, class_names, **kwargs):
+        if 'annos' not in self.kitti_infos[0].keys():
+            return None, {}
+        eval_gt_annos = [copy.deepcopy(info['annos']) for info in self.kitti_infos]
+        return eval_gt_annos
 
     def __len__(self):
         if self._merge_all_iters_to_one_epoch:

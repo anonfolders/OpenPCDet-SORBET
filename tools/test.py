@@ -16,6 +16,7 @@ from pcdet.config import cfg, cfg_from_list, cfg_from_yaml_file, log_config_to_f
 from pcdet.datasets import build_dataloader
 from pcdet.models import build_network
 from pcdet.utils import common_utils
+from tools.eval_utils import raw_data_utils
 
 
 def parse_config():
@@ -55,18 +56,30 @@ def parse_config():
     return args, cfg
 
 
-def eval_single_ckpt(model, test_loader, args, eval_output_dir, logger, epoch_id, dist_test=False):
+def raw_res_one_epoch(model, test_loader, args, eval_output_dir, logger, epoch_id, dist_test=False):
     # load checkpoint
     model.load_params_from_file(filename=args.ckpt, logger=logger, to_cpu=dist_test, 
                                 pre_trained_path=args.pretrained_model)
     model.cuda()
     
     # start evaluation
-    eval_utils.eval_one_epoch(
+    raw_data_utils.raw_res_one_epoch(
         cfg, args, model, test_loader, epoch_id, logger, dist_test=dist_test,
         result_dir=eval_output_dir
     )
 
+
+def eval_one_epoch(model, test_loader, args, eval_output_dir, logger, epoch_id, dist_test=False):
+    # load checkpoint
+    model.load_params_from_file(filename=args.ckpt, logger=logger, to_cpu=dist_test,
+                                pre_trained_path=args.pretrained_model)
+    model.cuda()
+
+    # start evaluation
+    eval_utils.eval_one_epoch(
+        cfg, args, model, test_loader, epoch_id, logger, dist_test=dist_test,
+        result_dir=eval_output_dir
+    )
 
 def get_no_evaluated_ckpt(ckpt_dir, ckpt_record_file, args):
     ckpt_list = glob.glob(os.path.join(ckpt_dir, '*checkpoint_epoch_*.pth'))
@@ -200,7 +213,11 @@ def main():
         if args.eval_all:
             repeat_eval_ckpt(model, test_loader, args, eval_output_dir, logger, ckpt_dir, dist_test=dist_test)
         else:
-            eval_single_ckpt(model, test_loader, args, eval_output_dir, logger, epoch_id, dist_test=dist_test)
+            # if not args.raw_data:
+            #     eval_one_epoch(model, test_loader, args, eval_output_dir, logger, epoch_id, dist_test=dist_test)
+            # else:
+            #     raw_res_one_epoch(model, test_loader, args, eval_output_dir, logger, epoch_id, dist_test=dist_test)
+            raw_res_one_epoch(model, test_loader, args, eval_output_dir, logger, epoch_id, dist_test=dist_test)
 
 
 if __name__ == '__main__':

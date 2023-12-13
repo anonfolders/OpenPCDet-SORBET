@@ -186,6 +186,7 @@ def compute_statistics_jit(overlaps,
     # thresholds = [0.0]
     # delta = [0.0]
     thresholds = np.zeros((gt_size, ))
+    thresholds_indices = np.zeros((gt_size,))
     thresh_idx = 0
     delta = np.zeros((gt_size, ))
     delta_idx = 0
@@ -233,6 +234,7 @@ def compute_statistics_jit(overlaps,
             tp += 1
             # thresholds.append(dt_scores[det_idx])
             thresholds[thresh_idx] = dt_scores[det_idx]
+            thresholds_indices[thresh_idx] = i
             thresh_idx += 1
             if compute_aos:
                 # delta.append(gt_alphas[i] - dt_alphas[det_idx])
@@ -272,7 +274,7 @@ def compute_statistics_jit(overlaps,
                 similarity = np.sum(tmp)
             else:
                 similarity = -1
-    return tp, fp, fn, similarity, thresholds[:thresh_idx]
+    return tp, fp, fn, similarity, thresholds[:thresh_idx],thresholds_indices[:thresh_idx]
 
 
 def get_split_parts(num, num_part):
@@ -315,7 +317,7 @@ def fused_compute_statistics(overlaps,
             ignored_gt = ignored_gts[gt_num:gt_num + gt_nums[i]]
             ignored_det = ignored_dets[dt_num:dt_num + dt_nums[i]]
             dontcare = dontcares[dc_num:dc_num + dc_nums[i]]
-            tp, fp, fn, similarity, _ = compute_statistics_jit(
+            tp, fp, fn, similarity, _, _ = compute_statistics_jit(
                 overlap,
                 gt_data,
                 dt_data,
@@ -472,6 +474,11 @@ def eval_class(gt_annos,
 
     rets = calculate_iou_partly(dt_annos, gt_annos, metric, num_parts)
     overlaps, parted_overlaps, total_dt_num, total_gt_num = rets
+
+    cus_det_res = []
+    for ovrl in overlaps:
+        cus_det_res.append(list(ovrl.argmax(axis=1)) + list(ovrl.max(axis=1)))
+
     N_SAMPLE_PTS = 41
     num_minoverlap = len(min_overlaps)
     num_class = len(current_classes)
@@ -488,6 +495,8 @@ def eval_class(gt_annos,
              dontcares, total_dc_num, total_num_valid_gt) = rets
             for k, min_overlap in enumerate(min_overlaps[:, metric, m]):
                 thresholdss = []
+                thresholdss_v2 = []
+                thresholds_indices_list = []
                 for i in range(len(gt_annos)):
                     rets = compute_statistics_jit(
                         overlaps[i],
@@ -500,8 +509,11 @@ def eval_class(gt_annos,
                         min_overlap=min_overlap,
                         thresh=0.0,
                         compute_fp=False)
-                    tp, fp, fn, similarity, thresholds = rets
+                    tp, fp, fn, similarity, thresholds, thresholds_indices = rets
                     thresholdss += thresholds.tolist()
+                    thresholdss_v2.append(thresholds.tolist())
+                    thresholds_indices_list.append(thresholds_indices.tolist())
+
                 thresholdss = np.array(thresholdss)
                 thresholds = get_thresholds(thresholdss, total_num_valid_gt)
                 thresholds = np.array(thresholds)
@@ -549,6 +561,9 @@ def eval_class(gt_annos,
         "recall": recall,
         "precision": precision,
         "orientation": aos,
+        "thresholds": thresholdss_v2,
+        "thresholds_indices": thresholds_indices_list,
+        "detection": cus_det_res
     }
     return ret_dict
 
@@ -615,7 +630,10 @@ def do_eval(gt_annos,
     mAP_3d_R40 = get_mAP_R40(ret["precision"])
     if PR_detail_dict is not None:
         PR_detail_dict['3d'] = ret['precision']
-    return mAP_bbox, mAP_bev, mAP_3d, mAP_aos, mAP_bbox_R40, mAP_bev_R40, mAP_3d_R40, mAP_aos_R40
+    threshold = ret['thresholds']
+    thresholds_indices = ret['thresholds_indices']
+    detection = ret['detection']
+    return mAP_bbox, mAP_bev, mAP_3d, mAP_aos, mAP_bbox_R40, mAP_bev_R40, mAP_3d_R40, mAP_aos_R40, threshold, thresholds_indices, detection
 
 
 def do_coco_style_eval(gt_annos, dt_annos, current_classes, overlap_ranges,
@@ -671,7 +689,7 @@ def get_official_eval_result(gt_annos, dt_annos, current_classes, PR_detail_dict
             if anno['alpha'][0] != -10:
                 compute_aos = True
             break
-    mAPbbox, mAPbev, mAP3d, mAPaos, mAPbbox_R40, mAPbev_R40, mAP3d_R40, mAPaos_R40 = do_eval(
+    mAPbbox, mAPbev, mAP3d, mAPaos, mAPbbox_R40, mAPbev_R40, mAP3d_R40, mAPaos_R40, threshold, thresholds_indices, detection = do_eval(
         gt_annos, dt_annos, current_classes, min_overlaps, compute_aos, PR_detail_dict=PR_detail_dict)
 
     ret_dict = {}
@@ -743,7 +761,7 @@ def get_official_eval_result(gt_annos, dt_annos, current_classes, PR_detail_dict
                 ret_dict['%s_image/moderate_R40' % class_to_name[curcls]] = mAPbbox_R40[j, 1, 0]
                 ret_dict['%s_image/hard_R40' % class_to_name[curcls]] = mAPbbox_R40[j, 2, 0]
 
-    return result, ret_dict
+    return result, ret_dict, threshold, thresholds_indices, detection
 
 
 def get_coco_eval_result(gt_annos, dt_annos, current_classes):

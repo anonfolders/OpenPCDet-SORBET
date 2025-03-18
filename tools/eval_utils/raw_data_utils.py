@@ -26,7 +26,7 @@ def statistics_info(cfg, ret_dict, metric, disp_dict):
         '(%d, %d) / %d' % (metric['recall_roi_%s' % str(min_thresh)], metric['recall_rcnn_%s' % str(min_thresh)], metric['gt_num'])
 
 
-def raw_res_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=False, result_dir=None):
+def eval_one_epoch_raw(cfg, args, model, dataloader, epoch_id, logger, dist_test=False, result_dir=None, data_mode='kitti'):
     #################################################################################
     output_folder = datetime.now().strftime('%y%m%d-%H%M%S')
     restore_path = os.path.join(root, output_folder)
@@ -70,7 +70,14 @@ def raw_res_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=
 
     if cfg.LOCAL_RANK == 0:
         progress_bar = tqdm.tqdm(total=len(dataloader), leave=True, desc='eval', dynamic_ncols=True)
+
+    # store delay of each inference
+    inference_time_record_adperf = []
+
     start_time = time.time()
+    
+    inference_time_record_adperf.append(start_time)
+
     for i, batch_dict in enumerate(dataloader):
         load_data_to_gpu(batch_dict)
 
@@ -88,12 +95,16 @@ def raw_res_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=
             # use ms to measure inference time
             disp_dict['infer_time'] = f'{infer_time_meter.val:.2f}({infer_time_meter.avg:.2f})'
 
+        # record time for each iter
+        inference_time_record_adperf.append(time.time())
+
         statistics_info(cfg, ret_dict, metric, disp_dict)
         annos = dataset.generate_prediction_dicts(
             batch_dict, pred_dicts, class_names,
             output_path=final_output_dir if args.save_to_file else None
         )
         det_annos += annos
+
         if cfg.LOCAL_RANK == 0:
             progress_bar.set_postfix(disp_dict)
             progress_bar.update()
@@ -132,28 +143,41 @@ def raw_res_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=
     total_pred_objects = 0
     i = 0
     frame_used = []
-    big_gt = dataset.get_gt(det_annos, class_names,
-                            eval_metric=cfg.MODEL.POST_PROCESSING.EVAL_METRIC,
-                            output_path=final_output_dir)
-    print(len(big_gt))
+    # big_gt = dataset.get_gt(det_annos, class_names,
+    #                         eval_metric=cfg.MODEL.POST_PROCESSING.EVAL_METRIC,
+    #                         output_path=final_output_dir)
+    # print(len(big_gt))
 
     for anno in det_annos:
         i += 1
         raw_res = []
+        num_dets = len(anno['name'])
+        # perform check of dataset type
+        # if 'occluded' means kitti otherwise nuscenes
+        if data_mode == 'kitti':
+            for det_idx in range(num_dets):
+                raw_det = {
+                    'name': str(anno['name'][det_idx]),
+                    'occluded': float(anno['occluded'][det_idx]),
+                    'alpha': float(anno['alpha'][det_idx]),
+                    'dimensions': anno['dimensions'][det_idx].tolist(),
+                    'location': anno['location'][det_idx].tolist(),
+                    'rotation_y': float(anno['rotation_y'][det_idx]),
+                    'truncated': float(anno['truncated'][det_idx]),
+                    'bbox': anno['bbox'][det_idx].tolist(),
+                    'score': float(anno['score'][det_idx]),
+                }
+                raw_res.append(raw_det)
+        else:
+            for det_idx in range(num_dets):
+                raw_det = {
+                    'name': str(anno['name'][det_idx]),
+                    'score': float(anno['score'][det_idx]),
+                    'bbox': anno['boxes_lidar'][det_idx].tolist(),
+                    'pred_labels': int(anno['pred_labels'][det_idx]),
+                }
+                raw_res.append(raw_det)
 
-        for j in range(0, len(anno['name'])):
-            raw_res_of_j = {
-                'name': str(anno['name'][j]),
-                'occluded': float(anno['occluded'][j]),
-                'alpha': float(anno['alpha'][j]),
-                'dimensions': anno['dimensions'][j].tolist(),
-                'location': anno['location'][j].tolist(),
-                'rotation_y': float(anno['rotation_y'][j]),
-                'truncated': float(anno['truncated'][j]),
-                'bbox': anno['bbox'][j].tolist(),
-                'score': float(anno['score'][j]),
-            }
-            raw_res.append(raw_res_of_j)
         total_pred_objects += anno['name'].__len__()
         anno_fid = anno['frame_id']
         
@@ -170,17 +194,34 @@ def raw_res_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=
     with open(f'{result_dir}/result.pkl', 'wb') as f:
         pickle.dump(det_annos, f)
 
-    result_str, result_dict, threshold, thresholds_indices, detection = dataset.evaluation(
-        det_annos, class_names,
-        eval_metric=cfg.MODEL.POST_PROCESSING.EVAL_METRIC,
-        output_path=final_output_dir
-    )
-    with open(f'{restore_path}/detections.txt', 'w') as fd:
-        for line in detection:
-            ious = ' '.join([str(i) for i in line]) + '\n'
-            fd.write(ious)
+    if data_mode == 'kitti':
+        result_str, result_dict, threshold, thresholds_indices, detection = dataset.evaluation(
+            det_annos, class_names,
+            eval_metric=cfg.MODEL.POST_PROCESSING.EVAL_METRIC,
+            output_path=final_output_dir
+        )
+        with open(f'{restore_path}/detections.txt', 'w') as fd:
+            for line in detection:
+                ious = ' '.join([str(i) for i in line]) + '\n'
+                fd.write(ious)
 
-    logger.debug(f'Written gt and ious to {restore_path}')
+        logger.info(f'Written gt and ious to {restore_path}')
+    else:
+        result_str, result_dict = dataset.evaluation(
+            det_annos, class_names,
+            eval_metric=cfg.MODEL.POST_PROCESSING.EVAL_METRIC,
+            output_path=final_output_dir
+        )        
+
+    with open('adperf_results.txt', 'w') as fd:
+        fd.write(restore_path)
+
+    delay_path = f'{restore_path}/delays.txt'
+
+    with open(delay_path, 'w') as fd:
+        adperf_delays = ' '.join(str(i) for i in inference_time_record_adperf[1:])
+        fd.write(adperf_delays)
+    logger.info(f'Written delays to {delay_path}')
 
     logger.info(result_str)
     ret_dict.update(result_dict)

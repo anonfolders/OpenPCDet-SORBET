@@ -35,7 +35,7 @@ def get_coor_colors(obj_labels):
     return label_rgba
 
 
-def draw_scenes(points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scores=None, point_colors=None, draw_origin=True):
+def draw_scenes(points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scores=None, point_colors=None, draw_origin=True, custom_points = None, custom_ref_boxes=None, corrupted_points=None):
     if isinstance(points, torch.Tensor):
         points = points.cpu().numpy()
     if isinstance(gt_boxes, torch.Tensor):
@@ -63,11 +63,26 @@ def draw_scenes(points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scor
     else:
         pts.colors = open3d.utility.Vector3dVector(point_colors)
 
+    if custom_points is not None:
+        cus_pts = open3d.geometry.PointCloud()
+        cus_pts.points = open3d.utility.Vector3dVector(custom_points)
+        vis.add_geometry(cus_pts)
+        cus_pts.colors = open3d.utility.Vector3dVector(np.zeros((custom_points.shape[0], 3)) + [0, 0, 1])
+
+    if corrupted_points is not None:
+        cor_pts = open3d.geometry.PointCloud()
+        cor_pts.points = open3d.utility.Vector3dVector(corrupted_points)
+        vis.add_geometry(cor_pts)
+        cor_pts.colors = open3d.utility.Vector3dVector(np.zeros((corrupted_points.shape[0], 3)) + [1, 0, 0])
+
     if gt_boxes is not None:
         vis = draw_box(vis, gt_boxes, (0, 0, 1))
 
     if ref_boxes is not None:
         vis = draw_box(vis, ref_boxes, (0, 1, 0), ref_labels, ref_scores)
+
+    if custom_ref_boxes is not None:
+        pass #wip
 
     vis.run()
     vis.destroy_window()

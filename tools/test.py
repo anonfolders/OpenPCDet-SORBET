@@ -42,6 +42,9 @@ def parse_config():
     parser.add_argument('--save_to_file', action='store_true', default=False, help='')
     parser.add_argument('--infer_time', action='store_true', default=False, help='calculate inference latency')
 
+    parser.add_argument('--raw_output', action='store_true', default=False, help='output raw detection results')
+    parser.add_argument('--measure_delay', action='store_true', default=False, help='measure delays')
+
     args = parser.parse_args()
 
     cfg_from_yaml_file(args.cfg_file, cfg)
@@ -63,7 +66,7 @@ def raw_res_one_epoch(model, test_loader, args, eval_output_dir, logger, epoch_i
     model.cuda()
     
     # start evaluation
-    raw_data_utils.raw_res_one_epoch(
+    raw_data_utils.eval_one_epoch_raw(
         cfg, args, model, test_loader, epoch_id, logger, dist_test=dist_test,
         result_dir=eval_output_dir
     )
@@ -213,11 +216,11 @@ def main():
         if args.eval_all:
             repeat_eval_ckpt(model, test_loader, args, eval_output_dir, logger, ckpt_dir, dist_test=dist_test)
         else:
-            # if not args.raw_data:
-            #     eval_one_epoch(model, test_loader, args, eval_output_dir, logger, epoch_id, dist_test=dist_test)
-            # else:
-            #     raw_res_one_epoch(model, test_loader, args, eval_output_dir, logger, epoch_id, dist_test=dist_test)
             raw_res_one_epoch(model, test_loader, args, eval_output_dir, logger, epoch_id, dist_test=dist_test)
+            # if args.raw_output:
+            #     raw_res_one_epoch(model, test_loader, args, eval_output_dir, logger, epoch_id, dist_test=dist_test)
+            # else:
+            #     eval_one_epoch(model, test_loader, args, eval_output_dir, logger, epoch_id, dist_test=dist_test)
 
 
 if __name__ == '__main__':
